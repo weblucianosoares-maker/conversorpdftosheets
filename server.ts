@@ -60,18 +60,20 @@ async function startServer() {
       });
 
       // 3. Extrair dados com IA (Gemini)
-      // Processamos o texto completo para extrair a tabela
+      // Instruções rigorosas para ignorar textos fora da tabela
       const prompt = `
-        Abaixo está o conteúdo de um PDF que contém uma tabela de "Maiores Usuários por Valor" de um plano de saúde.
-        Extraia os dados da tabela principal e retorne APENAS um array JSON de arrays, onde cada sub-array representa uma linha da tabela.
-        Inclua os cabeçalhos na primeira linha.
-        Os cabeçalhos devem ser: Marca Ótica, Empresa, Beneficiário, Idade, Tipo Beneficiário, Custo Médico, Qtde de Eventos, % Custo s/ Total, Custo Unitário.
-        Certifique-se de que valores monetários e numéricos sejam preservados corretamente.
-        Remova cabeçalhos repetidos e rodapés de página.
-        Se houver quebras de linha dentro de uma célula, concatene-as em uma única string.
-        Retorne APENAS o JSON, sem markdown ou explicações.
+        Você é um especialista em extração de dados. Sua tarefa é extrair APENAS os dados da tabela principal contida no texto do PDF abaixo.
+        
+        REGRAS CRÍTICAS:
+        1. Ignore qualquer texto que não faça parte das colunas da tabela (títulos do documento, filtros aplicados, números de página, datas de geração, etc).
+        2. Retorne APENAS um array JSON de arrays (matriz), onde cada sub-array é uma linha da tabela.
+        3. A primeira linha do JSON deve conter exatamente estes cabeçalhos: "Marca Ótica", "Empresa", "Beneficiário", "Idade", "Tipo Beneficiário", "Custo Médico", "Qtde de Eventos", "% Custo s/ Total", "Custo Unitário".
+        4. Fidelidade total: Não altere valores, nomes ou códigos. 
+        5. Consolidação: Se uma célula tiver múltiplas linhas no PDF (especialmente na coluna Empresa ou Beneficiário), junte-as em uma única string sem quebras de linha.
+        6. Limpeza: Remova cabeçalhos que se repetem no meio do texto devido a quebras de página.
+        7. Retorne APENAS o código JSON puro, sem blocos de markdown (\`\`\`json) e sem qualquer comentário.
 
-        CONTEÚDO DO PDF:
+        CONTEÚDO DO PDF PARA EXTRAÇÃO:
         ${pdfData.text}
       `;
 
@@ -81,8 +83,16 @@ async function startServer() {
       });
       const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
       
-      // Limpar possível markdown do Gemini
-      const jsonString = responseText.replace(/```json|```/g, "").trim();
+      // Limpar possível markdown ou texto extra do Gemini
+      let jsonString = responseText;
+      if (jsonString.includes("```")) {
+        jsonString = jsonString.split("```")[1]; // Pega o conteúdo dentro do primeiro bloco de código
+        if (jsonString.startsWith("json")) {
+          jsonString = jsonString.substring(4);
+        }
+      }
+      jsonString = jsonString.trim();
+      
       const rows = JSON.parse(jsonString);
 
       // 4. Escrever na planilha
