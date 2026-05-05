@@ -32,8 +32,15 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Falha na conversão' }));
-        throw new Error(errorData.detail || errorData.error || 'Falha na conversão');
+        const text = await response.text();
+        let errorMessage = 'Falha na conversão';
+        try {
+          const errorData = JSON.parse(text);
+          errorMessage = errorData.detail || errorData.error || text;
+        } catch (e) {
+          errorMessage = text || 'Erro interno (sem mensagem)';
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
