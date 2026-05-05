@@ -31,15 +31,18 @@ export default function App() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Falha na conversão');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Falha na conversão' }));
+        throw new Error(errorData.error || 'Falha na conversão');
+      }
 
       const data = await response.json();
       setSpreadsheetUrl(data.spreadsheetUrl);
       setStatus('success');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setStatus('idle');
-      alert('Erro ao converter o arquivo. Verifique se o servidor está rodando e as credenciais configuradas.');
+      alert(`Erro: ${error.message}`);
     }
   };
 
