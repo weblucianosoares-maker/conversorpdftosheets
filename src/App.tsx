@@ -33,7 +33,7 @@ export default function App() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Falha na conversão' }));
-        throw new Error(errorData.error || 'Falha na conversão');
+        throw new Error(errorData.detail || errorData.error || 'Falha na conversão');
       }
 
       const data = await response.json();

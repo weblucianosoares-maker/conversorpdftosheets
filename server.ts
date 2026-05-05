@@ -135,7 +135,11 @@ app.post("/api/convert", upload.single("pdf"), async (req, res) => {
     res.json({ spreadsheetUrl, filename: req.file.originalname });
   } catch (error: any) {
     console.error("Erro na conversão:", error);
-    res.status(500).json({ error: error.message || "Erro interno no servidor" });
+    res.status(500).json({ 
+      error: error.message || "Erro interno no servidor",
+      stack: process.env.NODE_ENV !== "production" ? error.stack : undefined,
+      detail: error.toString()
+    });
   }
 });
 
