@@ -1,0 +1,6 @@
+{
+  "name": "PDF to Sheets Converter",
+  "description": "An application to parse multi-page PDF tables and export them to Google Sheets while maintaining data integrity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
