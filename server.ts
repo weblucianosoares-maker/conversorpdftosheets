@@ -28,9 +28,12 @@ app.post("/api/convert", upload.single("pdf"), async (req, res) => {
   }
 
   try {
-    // Parse PDF
+    // Parse PDF (Limitado a 2 páginas para teste de timeout)
     console.log("Iniciando parse do PDF...");
-    const parser = new PDFParse({ data: req.file.buffer });
+    const parser = new PDFParse({ 
+      data: req.file.buffer,
+      pagerrender: (pageNumber: number) => pageNumber <= 2 // Tenta limitar a renderização
+    });
     const pdfData = await parser.getText();
     console.log("PDF processado com sucesso. Total de páginas:", pdfData.total);
     console.log("Tamanho do texto extraído:", pdfData.text.length, "caracteres");
