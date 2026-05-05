@@ -17,16 +17,6 @@ function runMiddleware(req: any, res: any, fn: any) {
 }
 
 export default async function handler(req: any, res: any) {
-  // Teste rápido de ambiente (suporta /api/convert/test ou query param)
-  if (req.url?.includes('test')) {
-    return res.json({ 
-      status: "API is reachable",
-      hasGeminiKey: !!process.env.GEMINI_API_KEY,
-      hasSheetsCreds: !!process.env.GOOGLE_SHEETS_CREDENTIALS,
-      env: process.env.NODE_ENV
-    });
-  }
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
