@@ -1,13 +1,11 @@
 import { google } from "googleapis";
 import { GoogleGenAI } from "@google/genai";
 import multer from "multer";
-import { PDFParse } from "pdf-parse";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
-// Configurações globais
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Helper para rodar middleware Express em Vercel
 function runMiddleware(req: any, res: any, fn: any) {
   return new Promise((resolve, reject) => {
     fn(req, res, (result: any) => {
@@ -21,55 +19,62 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // 1. Receber o arquivo
     await runMiddleware(req, res, upload.single("pdf"));
-    if (!req.file) throw new Error("Nenhum arquivo PDF recebido.");
+    if (!req.file) throw new Error("PDF não recebido.");
 
-    console.log("Arquivo recebido:", req.file.originalname, req.file.size, "bytes");
-
-    // 2. Extrair texto do PDF
-    let pdfText = "";
+    // 1. Extração de texto ultra-leve usando PDF.js diretamente (sem canvas)
+    let fullText = "";
     try {
-      const parser = new PDFParse({ data: req.file.buffer });
-      const pdfData = await parser.getText();
-      pdfText = pdfData.text;
-      console.log("Texto extraído com sucesso. Tamanho:", pdfText.length);
-    } catch (pdfError: any) {
-      console.error("Erro no PDFParse:", pdfError);
-      throw new Error(`Falha ao ler o PDF: ${pdfError.message}`);
+      const data = new Uint8Array(req.file.buffer);
+      const loadingTask = pdfjs.getDocument({
+        data,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true
+      });
+      const pdf = await loadingTask.promise;
+      
+      // Lemos apenas as 5 primeiras páginas para garantir que não dê timeout
+      const maxPages = Math.min(pdf.numPages, 5);
+      for (let i = 1; i <= maxPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map((item: any) => item.str);
+        fullText += strings.join(" ") + "\n";
+      }
+      console.log("Texto extraído com PDF.js. Tamanho:", fullText.length);
+    } catch (e: any) {
+      console.error("Erro no PDF.js:", e);
+      throw new Error("Erro ao processar a leitura do PDF.");
     }
 
-    // 3. Autenticação Google
-    const credsEnv = process.env.GOOGLE_SHEETS_CREDENTIALS;
-    if (!credsEnv) throw new Error("GOOGLE_SHEETS_CREDENTIALS não configurado.");
-    const credentials = JSON.parse(credsEnv.trim().replace(/\\n/g, '\n'));
-
+    // 2. Setup Google
+    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS!.trim().replace(/\\n/g, '\n'));
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
     const sheetsClient = google.sheets({ version: "v4", auth });
 
-    // 4. Criar planilha
+    // 3. Criar Planilha
     const spreadsheet = await sheetsClient.spreadsheets.create({
-      requestBody: { properties: { title: `Conversão: ${req.file.originalname}` } },
+      requestBody: { properties: { title: `Convertido: ${req.file.originalname}` } },
     });
     const spreadsheetId = spreadsheet.data.spreadsheetId;
 
-    // 5. Extração com IA (Gemini)
-    // Usamos um prompt simplificado e limitamos o texto para garantir velocidade
-    const prompt = `Extraia a tabela de "Maiores Usuários" deste texto de PDF. Retorne APENAS um array JSON de arrays com os cabeçalhos: Marca Ótica, Empresa, Beneficiário, Idade, Tipo Beneficiário, Custo Médico, Qtde de Eventos, % Custo s/ Total, Custo Unitário. Texto: ${pdfText.substring(0, 15000)}`;
+    // 4. Gemini AI - Extração de Tabela
+    const prompt = `Extraia a tabela de usuários como um array JSON de arrays. Cabeçalhos: Marca Ótica, Empresa, Beneficiário, Idade, Tipo Beneficiário, Custo Médico, Qtde de Eventos, % Custo s/ Total, Custo Unitário. Texto: ${fullText.substring(0, 10000)}`;
 
     const result = await client.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
     
-    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-    const jsonString = responseText.replace(/```json|```/g, "").trim();
+    let jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    jsonString = jsonString.replace(/```json|```/g, "").trim();
     const rows = JSON.parse(jsonString);
 
-    // 6. Escrever e Compartilhar
+    // 5. Salvar e Compartilhar
     await sheetsClient.spreadsheets.values.update({
       spreadsheetId: spreadsheetId!,
       range: "Sheet1!A1",
@@ -86,22 +91,14 @@ export default async function handler(req: any, res: any) {
       },
     });
 
-    res.json({ 
-      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
-      message: "Sucesso!" 
-    });
+    res.json({ spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` });
 
   } catch (error: any) {
-    console.error("Erro fatal no handler:", error);
-    res.status(500).json({ 
-      error: error.message,
-      detail: error.stack
-    });
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 }
 
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  api: { bodyParser: false },
 };
