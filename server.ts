@@ -40,17 +40,20 @@ app.post("/api/convert", upload.single("pdf"), async (req, res) => {
     
     // Setup Google Sheets Auth
     console.log("Configurando autenticação do Google Sheets...");
-    if (!process.env.GOOGLE_SHEETS_CREDENTIALS) {
+    const credsEnv = process.env.GOOGLE_SHEETS_CREDENTIALS;
+    if (!credsEnv) {
       throw new Error("A variável GOOGLE_SHEETS_CREDENTIALS não está configurada no servidor.");
     }
     
     let credentials;
     try {
-      credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS);
+      // Tenta limpar possíveis problemas de formatação no JSON vindos da Vercel
+      const sanitizedCreds = credsEnv.trim().replace(/\\n/g, '\n');
+      credentials = JSON.parse(sanitizedCreds);
       console.log("Credenciais JSON parseadas com sucesso.");
-    } catch (e) {
+    } catch (e: any) {
       console.error("Erro ao parsear GOOGLE_SHEETS_CREDENTIALS:", e);
-      throw new Error("Erro ao processar as credenciais do Google Sheets. Verifique se o JSON é válido.");
+      throw new Error(`Erro no JSON das credenciais: ${e.message}`);
     }
 
     const auth = new google.auth.GoogleAuth({
@@ -95,8 +98,10 @@ app.post("/api/convert", upload.single("pdf"), async (req, res) => {
     `;
 
     if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY faltando!");
       throw new Error("A variável GEMINI_API_KEY não está configurada.");
     }
+    console.log("GEMINI_API_KEY detectada.");
 
     const result = await client.models.generateContent({
       model: "gemini-2.0-flash",
